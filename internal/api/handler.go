@@ -95,17 +95,38 @@ func (handler *Handler) Products(responseWriter http.ResponseWriter, request *ht
 }
 
 func (handler *Handler) WarehouseOrders(responseWriter http.ResponseWriter, request *http.Request) {
+	rawKey := request.Header.Get("X-API-Key")
+	key, found, err := handler.apiStore.FindKey(request.Context(), rawKey)
+	if err != nil {
+		handler.internalError(responseWriter, request, err)
+		return
+	}
+	if !found {
+		httpx.RespondWithJSON(responseWriter, http.StatusUnauthorized, map[string]string{
+			"error": "Invalid API key",
+		})
+		return
+	}
+	if key.Scope != "orders:read" {
+		httpx.RespondWithJSON(responseWriter, http.StatusForbidden, map[string]string{
+			"error": "Insufficient scope",
+		})
+		return
+	}
+
 	orders, err := handler.orderStore.ListAll(request.Context())
 	if err != nil {
 		handler.internalError(responseWriter, request, err)
 		return
 	}
+
 	responses := make([]integrationOrderResponse, 0, len(orders))
 	for _, order := range orders {
 		responses = append(responses, integrationOrderResponse{
 			ID: order.ID, Status: order.Status, TotalCents: order.TotalCents, CreatedAt: order.CreatedAt,
 		})
 	}
+
 	httpx.RespondWithJSON(responseWriter, http.StatusOK, map[string]any{
 		"integration": "Warehouse Fulfillment Integration",
 		"orders":      responses,
